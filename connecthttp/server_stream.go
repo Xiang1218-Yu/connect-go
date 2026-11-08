@@ -109,6 +109,7 @@ func newServerHandlerConfig(spec connect.Spec, opts *options) *handlerConfig {
 		ReadMaxBytes:                 opts.readMaxBytes,
 		SendMaxBytes:                 opts.sendMaxBytes,
 		StreamType:                   spec.StreamType,
+		ErrorDetailPolicy:            opts.errorDetailPolicy,
 	}
 }
 

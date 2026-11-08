@@ -124,6 +124,7 @@ type handlerConfig struct {
 	ReadMaxBytes                 int
 	SendMaxBytes                 int
 	StreamType                   connect.StreamType
+	ErrorDetailPolicy            connect.ErrorDetailPolicy
 }
 
 func (c *handlerConfig) newSpec() connect.Spec {
@@ -154,6 +155,7 @@ func (c *handlerConfig) newProtocolHandlers() []protocolHandler {
 			SendMaxBytes:                 c.SendMaxBytes,
 			RequireConnectProtocolHeader: c.RequireConnectProtocolHeader,
 			IdempotencyLevel:             c.IdempotencyLevel,
+			ErrorDetailPolicy:            c.ErrorDetailPolicy,
 		}))
 	}
 	return handlers

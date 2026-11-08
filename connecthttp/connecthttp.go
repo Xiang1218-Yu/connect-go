@@ -298,6 +298,7 @@ func newUnknownMethodHandler(server *connect.Server, opts *options) http.Handler
 	classifier := &ErrorWriter{
 		protobuf:                     newReadOnlyCodecs(opts.codecs).Protobuf(),
 		requireConnectProtocolHeader: opts.requireConnectProtocolHeader,
+		errorDetailPolicy:            opts.errorDetailPolicy,
 	}
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost {
@@ -438,6 +439,7 @@ type options struct {
 
 	// Server-only ([NewTransport] ignores these).
 	requireConnectProtocolHeader bool
+	errorDetailPolicy            connect.ErrorDetailPolicy
 
 	// conditional holds per-procedure option functions registered with
 	// WithConditionalOptions. They are evaluated against each spec by forSpec.

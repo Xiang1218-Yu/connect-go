@@ -233,7 +233,7 @@ func (g *grpcHandler) NewConn(
 			},
 			web: g.web,
 		},
-	})
+	}, g.spec, g.ErrorDetailPolicy)
 	if failed != nil {
 		// Negotiation failed, so we can't establish a stream.
 		_ = conn.Close(failed)

@@ -79,6 +79,7 @@ type protocolHandlerParams struct {
 	SendMaxBytes                 int
 	RequireConnectProtocolHeader bool
 	IdempotencyLevel             connect.IdempotencyLevel
+	ErrorDetailPolicy            connect.ErrorDetailPolicy
 }
 
 // Handler is the server side of a protocol. HTTP handlers typically support
@@ -232,13 +233,19 @@ func (cc *errorTranslatingClientConn) onResponseReceive(fn func(*http.Response))
 }
 
 // wrapHandlerConnWithCodedErrors ensures that we (1) scrub handler errors
-// before writing them to the network, and (2) return *Errors from all
-// exported APIs.
-func wrapHandlerConnWithCodedErrors(conn handlerConnCloser) handlerConnCloser {
+// before writing them to the network, applying policy's detail disclosure
+// rules for spec, and (2) return *Errors from all exported APIs.
+func wrapHandlerConnWithCodedErrors(
+	conn handlerConnCloser,
+	spec connect.Spec,
+	policy connect.ErrorDetailPolicy,
+) handlerConnCloser {
 	return &errorTranslatingHandlerConnCloser{
 		handlerConnCloser: conn,
-		toWire:            scrubHandlerError,
-		fromWire:          wrapIfUncoded,
+		toWire: func(err error) error {
+			return scrubHandlerError(err, spec, policy)
+		},
+		fromWire: wrapIfUncoded,
 	}
 }
 

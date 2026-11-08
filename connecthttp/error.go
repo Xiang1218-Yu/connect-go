@@ -94,7 +94,12 @@ func wrapIfUncoded(err error) error {
 // and details. Remote errors become [connect.CodeInternal] and other errors
 // [connect.CodeUnknown] (context errors keep their codes), all with no
 // message. The original error stays attached as a local-only cause.
-func scrubHandlerError(err error) error {
+//
+// When policy is non-nil, the locally authored error's details are filtered
+// for spec before the verdict is serialized. The handler's original error is
+// never modified, and remote errors have already been reduced to a detail-free
+// [connect.CodeInternal], so internal details from upstream peers cannot leak.
+func scrubHandlerError(err error, spec connect.Spec, policy connect.ErrorDetailPolicy) error {
 	if err == nil {
 		return nil
 	}
@@ -102,7 +107,7 @@ func scrubHandlerError(err error) error {
 		if cerr.IsRemote() {
 			return connect.NewError(connect.CodeInternal, "").WithCause(err)
 		}
-		return err
+		return connect.FilterErrorDetails(policy, spec, cerr)
 	}
 	code := connect.CodeUnknown
 	switch {

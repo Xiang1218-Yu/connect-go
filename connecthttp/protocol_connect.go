@@ -308,7 +308,7 @@ func (h *connectHandler) NewConn(
 			responseTrailer: make(http.Header),
 		}
 	}
-	conn = wrapHandlerConnWithCodedErrors(conn)
+	conn = wrapHandlerConnWithCodedErrors(conn, h.spec, h.ErrorDetailPolicy)
 
 	if failed != nil {
 		// Negotiation failed, so we can't establish a stream.

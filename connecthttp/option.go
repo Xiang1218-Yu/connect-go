@@ -215,6 +215,33 @@ func WithConditionalOptions(conditional func(spec connect.Spec) []Option) Option
 	return conditionalOption{conditional: conditional}
 }
 
+// WithErrorDetailPolicy configures the handler to filter the details on
+// handler errors with policy before serializing them for clients. The
+// policy decides, by detail type and per procedure, which details may be
+// disclosed; rejected details never reach the client, while the error's
+// code and public message are always preserved. The handler's original
+// error, including its cause and full detail list, is left untouched for
+// local logging and error checks.
+//
+// The same filtering applies to the Connect, gRPC, and gRPC-Web protocols,
+// including negotiation failures, context cancellation, and streaming
+// end-of-stream errors. A policy returned by
+// [connect.NewErrorDetailRules] provides a service-level default rule and
+// per-procedure overrides; an override always takes precedence over the
+// default.
+//
+// Per-procedure policies may also be installed with
+// [WithConditionalOptions]: conditional options are evaluated after the
+// handler's base options, so such a policy deterministically replaces this
+// one for the matching procedure.
+//
+// Without this option, detail filtering is disabled and handlers keep their
+// existing behavior of sending every locally authored detail.
+// [NewTransport] ignores this option.
+func WithErrorDetailPolicy(policy connect.ErrorDetailPolicy) Option {
+	return errorDetailPolicyOption{policy: policy}
+}
+
 type protocolOption struct{ name string }
 
 // apply sets the client's outgoing protocol. A client speaks exactly one
@@ -282,4 +309,12 @@ func (o conditionalOption) apply(opts *options) {
 		return
 	}
 	opts.conditional = append(opts.conditional, o.conditional)
+}
+
+type errorDetailPolicyOption struct {
+	policy connect.ErrorDetailPolicy
+}
+
+func (o errorDetailPolicyOption) apply(opts *options) {
+	opts.errorDetailPolicy = o.policy
 }

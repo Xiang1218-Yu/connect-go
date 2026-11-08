@@ -263,7 +263,7 @@ func (s *clientStream) next(dst any) error {
 		return err
 	}
 	if errors.Is(err, io.EOF) && s.serverErr != nil {
-		err = asClientErr(s.serverErr)
+		err = asClientErr(s.serverErr, s.spec, s.t.policy)
 	}
 	s.finish(err)
 	return err
@@ -314,29 +314,38 @@ func (s *serverStream) Send(msg any) error {
 //   - Causes are dropped, as a wire transport never serializes them. This
 //     also keeps a cause matching io.EOF from reading as the clean end of
 //     the stream.
+//   - When policy is non-nil, locally authored details pass through the
+//     same disclosure filter the wire transports use, so in-process and
+//     network clients observe identical details.
 //   - The resulting error is marked as remote, mimicking a client-side
 //     decoded error.
 //
 // The server's original [*Error] is left untouched so it can be safely
 // used for server-side logging.
-func asClientErr(err error) error {
+func asClientErr(err error, spec connect.Spec, policy connect.ErrorDetailPolicy) error {
 	if err == nil {
 		return nil
 	}
+	var clientErr *connect.Error
 	if cerr, ok := errors.AsType[*connect.Error](err); ok && cerr != nil {
 		if cerr.IsRemote() {
-			return connect.NewError(connect.CodeInternal, "").WithRemote()
+			clientErr = connect.NewError(connect.CodeInternal, "")
+		} else {
+			clientErr = withoutCause(cerr)
 		}
-		return withoutCause(cerr).WithRemote()
+	} else {
+		code := connect.CodeUnknown
+		switch {
+		case errors.Is(err, context.Canceled):
+			code = connect.CodeCanceled
+		case errors.Is(err, context.DeadlineExceeded):
+			code = connect.CodeDeadlineExceeded
+		}
+		clientErr = connect.NewError(code, "")
 	}
-	code := connect.CodeUnknown
-	switch {
-	case errors.Is(err, context.Canceled):
-		code = connect.CodeCanceled
-	case errors.Is(err, context.DeadlineExceeded):
-		code = connect.CodeDeadlineExceeded
-	}
-	return connect.NewError(code, "").WithRemote()
+	// Every verdict, including cancellation and panic-derived errors, goes
+	// through the filter so no path can bypass the policy.
+	return connect.FilterErrorDetails(policy, spec, clientErr).WithRemote()
 }
 
 // withoutCause returns a copy of err with its code, message, and details, but

@@ -44,13 +44,15 @@ const (
 type ErrorWriter struct {
 	protobuf                     connect.Codec
 	requireConnectProtocolHeader bool
+	errorDetailPolicy            connect.ErrorDetailPolicy
 }
 
 // NewErrorWriter constructs an ErrorWriter. Options may be passed to configure
 // the error writer behaviour to match the handlers.
 // [WithRequireConnectProtocolHeader] will assert that Connect protocol
 // requests include the version header allowing the error writer to correctly
-// classify the request.
+// classify the request. [WithErrorDetailPolicy] applies the same detail
+// disclosure rules as the mounted handlers, keyed by the request's URL path.
 func NewErrorWriter(options ...Option) *ErrorWriter {
 	opts := defaultOptions()
 	for _, opt := range options {
@@ -60,6 +62,7 @@ func NewErrorWriter(options ...Option) *ErrorWriter {
 	return &ErrorWriter{
 		protobuf:                     codecs.Protobuf(),
 		requireConnectProtocolHeader: opts.requireConnectProtocolHeader,
+		errorDetailPolicy:            opts.errorDetailPolicy,
 	}
 }
 
@@ -112,7 +115,8 @@ func (w *ErrorWriter) IsSupported(request *http.Request) bool {
 //
 // Write does not read or close the request body.
 func (w *ErrorWriter) Write(response http.ResponseWriter, request *http.Request, err error) error {
-	err = scrubHandlerError(err)
+	spec := connect.Spec{Procedure: request.URL.Path}
+	err = scrubHandlerError(err, spec, w.errorDetailPolicy)
 	ctx := request.Context()
 	ctype := canonicalizeContentType(getHeaderCanonical(request.Header, headerContentType))
 	switch protocolType := w.classifyRequest(request); protocolType {

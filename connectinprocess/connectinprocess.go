@@ -51,12 +51,25 @@ func New(server *connect.Server, opts ...Option) connect.Transport {
 	return &transport{
 		server: server,
 		copy:   resolved.copy,
+		policy: resolved.policy,
 	}
 }
 
 // WithCopyFunc replaces the default [ProtoCopy] strategy.
 func WithCopyFunc(fn CopyFunc) Option {
 	return optionFunc(func(o *options) { o.copy = fn })
+}
+
+// WithErrorDetailPolicy applies the same error detail disclosure policy to
+// in-process RPCs that connecthttp.WithErrorDetailPolicy applies to wire
+// RPCs. Rejected details are removed from the client-visible error without
+// touching the server's original error, so clients using the in-process
+// transport observe exactly the details a network client would.
+//
+// Without this option, detail filtering is disabled and the transport keeps
+// its existing behavior of disclosing every locally authored detail.
+func WithErrorDetailPolicy(policy connect.ErrorDetailPolicy) Option {
+	return optionFunc(func(o *options) { o.policy = policy })
 }
 
 // ProtoCopy is the default [CopyFunc]. It uses [proto.Reset] followed by
@@ -80,6 +93,7 @@ func ProtoCopy(dst, src any) error {
 type transport struct {
 	server *connect.Server
 	copy   CopyFunc
+	policy connect.ErrorDetailPolicy
 }
 
 func (t *transport) NewClientStream(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
@@ -90,7 +104,8 @@ func (t *transport) NewClientStream(ctx context.Context, spec connect.Spec) (con
 }
 
 type options struct {
-	copy CopyFunc
+	copy   CopyFunc
+	policy connect.ErrorDetailPolicy
 }
 
 type optionFunc func(*options)
