@@ -288,10 +288,11 @@ func (c *Client) CallServerStream(ctx context.Context, spec Spec, req any) (Clie
 // Server is the procedure-to-method dispatcher. It owns the method
 // registry and the server-side interceptor chain.
 type Server struct {
-	chain   ServerInterceptor
-	methods map[string]Method // procedure -> registered method
-	specs   []Spec
-	unknown ServerFunc // fallback for unregistered procedures, nil means CodeUnimplemented
+	chain     ServerInterceptor
+	methods   map[string]Method // procedure -> registered method
+	specs     []Spec
+	unknown   ServerFunc // fallback for unregistered procedures, nil means CodeUnimplemented
+	admission *admissionController
 }
 
 // NewServer returns a dispatcher with no registered methods. The interceptors
@@ -351,6 +352,19 @@ func (s *Server) Call(ctx context.Context, procedure string, info *CallInfo, str
 	}
 	ctx = withServerContext(ctx, info)
 	ctx = clearClientContext(ctx)
+	// Admission runs before the handler (and its interceptor chain), so a
+	// rejected call never reads a request message, decompresses a payload, or
+	// produces response metadata. The deferred release runs after the handler
+	// returns, so unary calls release on completion while streaming calls hold
+	// their slots until the stream ends; the sync.Once in the lease guarantees
+	// a single release on every path, including panics.
+	lease, admissionErr := s.admission.admit(procedure)
+	if admissionErr != nil {
+		return admissionErr
+	}
+	if lease != nil {
+		defer lease.release()
+	}
 	method, ok := s.methods[procedure]
 	if !ok {
 		if s.unknown != nil {
