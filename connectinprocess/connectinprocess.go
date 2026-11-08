@@ -49,14 +49,32 @@ func New(server *connect.Server, opts ...Option) connect.Transport {
 		opt.apply(&resolved)
 	}
 	return &transport{
-		server: server,
-		copy:   resolved.copy,
+		server:       server,
+		copy:         resolved.copy,
+		sendPolicies: resolved.sendPolicies,
 	}
 }
 
 // WithCopyFunc replaces the default [ProtoCopy] strategy.
 func WithCopyFunc(fn CopyFunc) Option {
 	return optionFunc(func(o *options) { o.copy = fn })
+}
+
+// WithSendPolicies configures client-side send policies. The transport runs
+// the policies for every outgoing RPC after the client interceptor chain and
+// before the in-process server handler starts. Policies run in configuration
+// order; the first policy that returns an error rejects the RPC, later
+// policies do not run, and the server handler is never invoked. The
+// rejection is returned to the caller as a local error and does not touch
+// the call's response headers, trailers, error details, or message stats.
+//
+// Calls append to the policy chain, so repeated WithSendPolicies options
+// combine in order. When no policy is configured, every request keeps its
+// original behavior.
+func WithSendPolicies(policies ...connect.SendPolicy) Option {
+	return optionFunc(func(o *options) {
+		o.sendPolicies = append(o.sendPolicies, policies...)
+	})
 }
 
 // ProtoCopy is the default [CopyFunc]. It uses [proto.Reset] followed by
@@ -78,19 +96,32 @@ func ProtoCopy(dst, src any) error {
 }
 
 type transport struct {
-	server *connect.Server
-	copy   CopyFunc
+	server       *connect.Server
+	copy         CopyFunc
+	sendPolicies []connect.SendPolicy
 }
 
 func (t *transport) NewClientStream(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
 	if t.server == nil {
 		return nil, errors.New("connectinprocess: nil server")
 	}
+	// Run the send policy chain before constructing the stream: its first
+	// Send, SendHeaders, or Receive starts the server goroutine, so an
+	// early rejection guarantees the handler never runs.
+	info, _ := connect.CallInfoForClientContext(ctx)
+	var header *connect.Header
+	if info != nil {
+		header = info.RequestHeader()
+	}
+	if err := connect.ApplySendPolicies(ctx, spec, header, t.sendPolicies); err != nil {
+		return nil, err
+	}
 	return newClientStream(ctx, t, spec), nil
 }
 
 type options struct {
-	copy CopyFunc
+	copy         CopyFunc
+	sendPolicies []connect.SendPolicy
 }
 
 type optionFunc func(*options)

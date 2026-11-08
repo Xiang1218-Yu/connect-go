@@ -355,9 +355,16 @@ func (t *transport) NewClientStream(ctx context.Context, spec connect.Spec) (con
 	if !ok {
 		ctx, info = connect.NewClientContext(ctx)
 	}
+	opts := t.options.forSpec(spec)
+	// Run the send policy chain before any codec, compression, protocol,
+	// CallInfo, or HTTP work: a rejection returns a purely local error,
+	// never a request, and leaves the call's response metadata and stats
+	// untouched.
+	if err := connect.ApplySendPolicies(ctx, spec, info.RequestHeader(), opts.sendPolicies); err != nil {
+		return nil, err
+	}
 	clientInfo := &ClientInfo{}
 	info.TransportInfo = clientInfo
-	opts := t.options.forSpec(spec)
 	if opts.sendCompressor != "" && opts.sendCompressor != connect.CompressionNameIdentity {
 		if !slices.ContainsFunc(opts.compressors, func(c connect.Compressor) bool {
 			return c.Name() == opts.sendCompressor
@@ -435,6 +442,7 @@ type options struct {
 	getEnabled     bool
 	getMaxURLBytes int
 	getUseFallback bool
+	sendPolicies   []connect.SendPolicy
 
 	// Server-only ([NewTransport] ignores these).
 	requireConnectProtocolHeader bool
@@ -478,6 +486,7 @@ func (o *options) clone() *options {
 	opts := *o
 	opts.codecs = slices.Clone(o.codecs)
 	opts.compressors = slices.Clone(o.compressors)
+	opts.sendPolicies = slices.Clone(o.sendPolicies)
 	opts.conditional = nil
 	return &opts
 }

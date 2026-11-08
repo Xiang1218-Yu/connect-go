@@ -215,6 +215,22 @@ func WithConditionalOptions(conditional func(spec connect.Spec) []Option) Option
 	return conditionalOption{conditional: conditional}
 }
 
+// WithSendPolicies configures client-side send policies. The transport runs
+// the policies for every outgoing RPC after the client interceptor chain and
+// before the request is encoded, compressed, or transmitted. Policies run in
+// configuration order; the first policy that returns an error rejects the
+// RPC, later policies do not run, and no HTTP request is produced. The
+// rejection is returned to the caller as a local error and does not touch
+// the call's response headers, trailers, error details, or message stats.
+//
+// Calls append to the policy chain, so repeated WithSendPolicies options and
+// policies returned from [WithConditionalOptions] combine in order. When no
+// policy is configured, every request keeps its original behavior.
+// [Mount] ignores this option.
+func WithSendPolicies(policies ...connect.SendPolicy) Option {
+	return sendPoliciesOption(policies)
+}
+
 type protocolOption struct{ name string }
 
 // apply sets the client's outgoing protocol. A client speaks exactly one
@@ -282,4 +298,10 @@ func (o conditionalOption) apply(opts *options) {
 		return
 	}
 	opts.conditional = append(opts.conditional, o.conditional)
+}
+
+type sendPoliciesOption []connect.SendPolicy
+
+func (o sendPoliciesOption) apply(opts *options) {
+	opts.sendPolicies = append(opts.sendPolicies, o...)
 }

@@ -535,6 +535,47 @@ type ClientInterceptor func(next ClientFunc) ClientFunc
 // to next.
 type ServerInterceptor func(next ServerFunc) ServerFunc
 
+// SendPolicy is a local, pre-send decision for an outgoing RPC. Transports
+// that support policies run the configured chain once per RPC, after the
+// client interceptor chain has opened the stream and before the request
+// message is encoded, compressed, transmitted, or handed to an in-process
+// handler.
+//
+// The policy receives the RPC's [Spec] and the request [Header] from the
+// call's [CallInfo]. Returning nil allows the RPC to proceed; returning an
+// error rejects it. The transport returns the rejection to the caller
+// unchanged as a local error: it sends no HTTP request, starts no handler,
+// and leaves response headers, trailers, error details, and message stats
+// untouched. Policies run in configuration order, and the first rejection
+// stops the chain, so later policies never observe a rejected RPC.
+//
+// Policies must not mutate the request header.
+type SendPolicy func(ctx context.Context, spec Spec, header *Header) error
+
+// ApplySendPolicies runs policies in order for an outgoing RPC and returns
+// the first non-nil error. A nil header is replaced with an empty [Header],
+// so policies never see a nil map. When policies is empty it returns nil
+// without doing any work, leaving transports without policies on their
+// original path. [Transport] implementations can reuse this helper to match
+// the built-in transports' policy semantics.
+func ApplySendPolicies(ctx context.Context, spec Spec, header *Header, policies []SendPolicy) error {
+	if len(policies) == 0 {
+		return nil
+	}
+	if header == nil {
+		header = &Header{}
+	}
+	for _, policy := range policies {
+		if policy == nil {
+			continue
+		}
+		if err := policy(ctx, spec, header); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // StreamType describes the directionality of an RPC.
 type StreamType uint8
 
